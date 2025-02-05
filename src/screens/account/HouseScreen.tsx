@@ -3,9 +3,10 @@ import { View, StyleSheet, ScrollView, Alert, Text, Share } from 'react-native';
 import { TextInput, Button, List, Avatar, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../../contexts/AuthContext';
 import { theme } from '../../styles/theme';
-import { getHouseDetails, getHouseMembers, updateHouseRules, removeMember, generateInviteQRCode, generateInviteLink } from '../../services/house';
+import { getHouseDetails, getHouseMembers, updateHouseRules, removeMember, generateInviteQRCode, generateInviteLink, deleteHouse } from '../../services/house';
 import { House, HouseMember } from '../../types/house';
 import { QRCodeGenerator } from '../../components/QRCodeGenerator';
+import { useNavigation } from '@react-navigation/native';
 
 export default function HouseScreen() {
   const { user } = useAuth();
@@ -19,6 +20,7 @@ export default function HouseScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editedHouse, setEditedHouse] = useState<House | null>(null);
+  const navigation = useNavigation();
 
   useEffect(() => {
     loadHouseData();
@@ -103,6 +105,32 @@ export default function HouseScreen() {
     }
   };
 
+  const handleDeleteHouse = async () => {
+    Alert.alert(
+      'Deletar Casa',
+      'Tem certeza que deseja deletar esta casa? Esta ação não pode ser desfeita e todos os dados serão perdidos.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Deletar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteHouse(house?.id || '');
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Auth', params: { screen: 'HouseSelection' } }],
+              });
+            } catch (error) {
+              console.error('Erro ao deletar casa:', error);
+              Alert.alert('Erro', 'Não foi possível deletar a casa');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -180,6 +208,15 @@ export default function HouseScreen() {
                   style={styles.button}
                 >
                   Editar Dados
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  mode="contained"
+                  onPress={handleDeleteHouse}
+                  style={[styles.button, { backgroundColor: theme.colors.error }]}
+                >
+                  Deletar Casa
                 </Button>
               )}
             </View>

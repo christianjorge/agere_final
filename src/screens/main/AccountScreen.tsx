@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Text } from 'react-native';
 import { List, Avatar, Divider } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHouse } from '../../contexts/HouseContext';
 import { theme } from '../../styles/theme';
 import { getProfile } from '../../services/profile';
 
 export default function AccountScreen() {
   const navigation = useNavigation();
   const { user, logout } = useAuth();
+  const { setCurrentHouse } = useHouse();
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
@@ -31,11 +33,19 @@ export default function AccountScreen() {
       await logout();
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Auth' }], // Mudamos de 'Login' para 'Auth'
+        routes: [{ name: 'Auth' }],
       });
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     }
+  };
+
+  const handleSwitchHouse = () => {
+    setCurrentHouse(null);
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Auth', params: { screen: 'HouseSelection' } }],
+    });
   };
 
   return (
@@ -61,6 +71,12 @@ export default function AccountScreen() {
         title="Minha Casa"
         left={props => <List.Icon {...props} icon="home" />}
         onPress={() => navigation.navigate('House')}
+      />
+
+      <List.Item
+        title="Trocar de Casa"
+        left={props => <List.Icon {...props} icon="home-group" />}
+        onPress={handleSwitchHouse}
       />
 
       <List.Item

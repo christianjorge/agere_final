@@ -1,28 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Platform, Image, Alert } from 'react-native';
-import { TextInput, IconButton, Avatar, Text, ActivityIndicator, Portal, Dialog, Button} from 'react-native-paper';
+import { TextInput, IconButton, Avatar, Text, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../styles/theme';
-import { Message, sendMessage, getMessages, markAsRead, deleteMessage } from '../../services/chat';
+import { ChatMessage } from '../../types/chat';
+import { sendMessage, getMessages, markAsRead, deleteMessage } from '../../services/chat';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function ChatConversationScreen({ route }) {
   const { user: chatUser } = route.params;
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   useEffect(() => {
     const unsubscribe = getMessages(chatUser.id, (updatedMessages) => {
       setMessages(updatedMessages);
       setLoading(false);
       markAsRead(chatUser.id);
+      
+      // Só rolar para o final na carga inicial ou quando o usuário atual envia uma mensagem
+      if (initialLoad || (updatedMessages.length > 0 && updatedMessages[0].senderId === user?.uid)) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }, 100);
+      }
+      setInitialLoad(false);
     });
 
     return () => unsubscribe();
@@ -36,6 +46,7 @@ export default function ChatConversationScreen({ route }) {
       setNewMessage('');
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
+      Alert.alert('Erro', 'Não foi possível enviar a mensagem');
     }
   };
 
@@ -50,6 +61,7 @@ export default function ChatConversationScreen({ route }) {
         await sendMessage(chatUser.id, '', result.assets[0].uri);
       } catch (error) {
         console.error('Erro ao enviar imagem:', error);
+        Alert.alert('Erro', 'Não foi possível enviar a imagem');
       }
     }
   };
@@ -85,7 +97,7 @@ export default function ChatConversationScreen({ route }) {
     });
   };
 
-  const handleLongPress = (message: Message) => {
+  const handleLongPress = (message: ChatMessage) => {
     if (message.senderId === user?.uid) {
       setSelectedMessage(message);
       setShowDeleteDialog(true);
@@ -105,41 +117,48 @@ export default function ChatConversationScreen({ route }) {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isOwnMessage = item.senderId === user?.uid;
 
     return (
       <TouchableOpacity 
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
-      >
-        <View style={[
+        style={[
           styles.messageContainer,
           isOwnMessage ? styles.ownMessage : styles.otherMessage
-        ]}>
-          {item.imageUrl ? (
-            <TouchableOpacity onPress={() => {/* Implementar visualização da imagem */}}>
-              <Image 
-                source={{ uri: item.imageUrl }} 
-                style={styles.messageImage}
-                resizeMode="cover"
-              />
-            </TouchableOpacity>
-          ) : (
+        ]}
+      >
+        {item.imageUrl ? (
+          <View>
+            <Image 
+              source={{ uri: item.imageUrl }} 
+              style={styles.messageImage}
+              resizeMode="cover"
+            />
+            <Text style={[
+              styles.timeText,
+              isOwnMessage ? styles.ownTimeText : styles.otherTimeText
+            ]}>
+              {formatTime(item.createdAt)}
+            </Text>
+          </View>
+        ) : (
+          <View>
             <Text style={[
               styles.messageText,
               isOwnMessage ? styles.ownMessageText : styles.otherMessageText
             ]}>
               {item.content}
             </Text>
-          )}
-          <Text style={[
-            styles.timeText,
-            isOwnMessage ? styles.ownTimeText : styles.otherTimeText
-          ]}>
-            {formatTime(item.createdAt)}
-          </Text>
-        </View>
+            <Text style={[
+              styles.timeText,
+              isOwnMessage ? styles.ownTimeText : styles.otherTimeText
+            ]}>
+              {formatTime(item.createdAt)}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -160,7 +179,6 @@ export default function ChatConversationScreen({ route }) {
         renderItem={renderMessage}
         keyExtractor={item => item.id!}
         contentContainerStyle={styles.listContainer}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
         inverted
       />
 

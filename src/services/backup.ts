@@ -1,8 +1,9 @@
-import { collection, getDocs, query, addDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { collection, getDocs, query, addDoc, where } from 'firebase/firestore';
+import { db, auth } from '../config/firebase';
 
 interface BackupData {
   timestamp: Date;
+  houseId: string;
   data: {
     house: any[];
     members: any[];
@@ -15,9 +16,26 @@ interface BackupData {
 
 const backupCollection = collection(db, 'backups');
 
+const getCurrentHouseId = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const memberQuery = query(
+    collection(db, 'houseMembers'),
+    where('userId', '==', user.uid)
+  );
+  const memberSnapshot = await getDocs(memberQuery);
+  if (memberSnapshot.empty) {
+    throw new Error('Usuário não pertence a nenhuma casa');
+  }
+  return memberSnapshot.docs[0].data().houseId;
+};
+
 export const createBackup = async () => {
   try {
-    // Coletar dados de todas as coleções importantes
+    const houseId = await getCurrentHouseId();
+
+    // Coletar dados de todas as coleções da casa atual
     const [
       houseData,
       membersData,
@@ -26,16 +44,17 @@ export const createBackup = async () => {
       postsData,
       shoppingData
     ] = await Promise.all([
-      getDocs(collection(db, 'houses')),
-      getDocs(collection(db, 'houseMembers')),
-      getDocs(collection(db, 'expenses')),
-      getDocs(collection(db, 'tasks')),
-      getDocs(collection(db, 'posts')),
-      getDocs(collection(db, 'shoppingList'))
+      getDocs(query(collection(db, 'houses'), where('id', '==', houseId))),
+      getDocs(query(collection(db, 'houseMembers'), where('houseId', '==', houseId))),
+      getDocs(query(collection(db, 'expenses'), where('houseId', '==', houseId))),
+      getDocs(query(collection(db, 'tasks'), where('houseId', '==', houseId))),
+      getDocs(query(collection(db, 'posts'), where('houseId', '==', houseId))),
+      getDocs(query(collection(db, 'shoppingList'), where('houseId', '==', houseId)))
     ]);
 
     const backup: BackupData = {
       timestamp: new Date(),
+      houseId,
       data: {
         house: houseData.docs.map(doc => ({ id: doc.id, ...doc.data() })),
         members: membersData.docs.map(doc => ({ id: doc.id, ...doc.data() })),
@@ -55,7 +74,6 @@ export const createBackup = async () => {
 };
 
 export const scheduleBackup = () => {
-  // Criar backup diário às 3h da manhã
   const now = new Date();
   const nextBackup = new Date(
     now.getFullYear(),
@@ -68,6 +86,6 @@ export const scheduleBackup = () => {
   
   setTimeout(async () => {
     await createBackup();
-    scheduleBackup(); // Agendar próximo backup
+    scheduleBackup();
   }, timeUntilBackup);
 };

@@ -8,6 +8,7 @@ import AuthNavigator from './src/navigation/AuthNavigator';
 import MainNavigator from './src/navigation/MainNavigator';
 import { registerForPushNotificationsAsync } from './src/services/notifications';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { HouseProvider } from './src/contexts/HouseContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -31,12 +32,14 @@ export default function App() {
   return (
     <PaperProvider>
       <AuthProvider>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Auth" component={AuthNavigator} />
-            <Stack.Screen name="Main" component={MainNavigator} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <HouseProvider>
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Auth" component={AuthNavigator} />
+              <Stack.Screen name="Main" component={MainNavigator} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </HouseProvider>
       </AuthProvider>
     </PaperProvider>
   );

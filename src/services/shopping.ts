@@ -1,30 +1,20 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
-
-export interface ShoppingItem {
-  id?: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  urgent: boolean;
-  estimatedPrice: number;
-  addedBy: string;
-  addedByEmail: string;
-  completed: boolean;
-  completedBy?: string;
-  completedAt?: Date;
-  createdAt: Date;
-  expenseId?: string; // Referência à despesa criada quando o item for comprado
-}
+import { ShoppingItem } from '../types/shopping';
+import { getCurrentHouseId } from '../utils/houseUtils';
 
 const shoppingCollection = collection(db, 'shoppingList');
 
-export const addShoppingItem = async (item: Omit<ShoppingItem, 'id' | 'addedBy' | 'addedByEmail' | 'createdAt'>) => {
+export const addShoppingItem = async (item: Omit<ShoppingItem, 'id' | 'addedBy' | 'addedByEmail' | 'createdAt' | 'houseId'>) => {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+  console.log(houseId);
+
   await addDoc(shoppingCollection, {
     ...item,
+    houseId,
     addedBy: user.uid,
     addedByEmail: user.email,
     createdAt: new Date(),
@@ -38,9 +28,20 @@ export const updateShoppingItem = async (itemId: string, updates: Partial<Shoppi
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
+  // Verificar se o item pertence à casa atual
   const itemRef = doc(db, 'shoppingList', itemId);
+  const itemDoc = await getDoc(itemRef);
   
-  // Se estiver marcando como completo, adicionar informações adicionais
+  if (!itemDoc.exists()) {
+    throw new Error('Item não encontrado');
+  }
+
+  if (itemDoc.data().houseId !== houseId) {
+    throw new Error('Item não pertence a esta casa');
+  }
+  
   if (updates.completed) {
     updates.completedBy = user.uid;
     updates.completedAt = new Date();
@@ -50,14 +51,32 @@ export const updateShoppingItem = async (itemId: string, updates: Partial<Shoppi
 };
 
 export const deleteShoppingItem = async (itemId: string) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const houseId = await getCurrentHouseId();
+
+  // Verificar se o item pertence à casa atual
   const itemRef = doc(db, 'shoppingList', itemId);
+  const itemDoc = await getDoc(itemRef);
+  
+  if (!itemDoc.exists()) {
+    throw new Error('Item não encontrado');
+  }
+
+  if (itemDoc.data().houseId !== houseId) {
+    throw new Error('Item não pertence a esta casa');
+  }
+
   await deleteDoc(itemRef);
 };
 
 export const getShoppingList = async () => {
-  // Buscar primeiro os itens não completados, ordenados por urgência e data
+  const houseId = await getCurrentHouseId();
+  
   const q = query(
     shoppingCollection,
+    where('houseId', '==', houseId),
     orderBy('completed', 'asc'),
     orderBy('urgent', 'desc'),
     orderBy('createdAt', 'desc')
@@ -71,11 +90,27 @@ export const getShoppingList = async () => {
 };
 
 export const linkShoppingItemToExpense = async (itemId: string, expenseId: string) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const houseId = await getCurrentHouseId();
+
+  // Verificar se o item pertence à casa atual
   const itemRef = doc(db, 'shoppingList', itemId);
+  const itemDoc = await getDoc(itemRef);
+  
+  if (!itemDoc.exists()) {
+    throw new Error('Item não encontrado');
+  }
+
+  if (itemDoc.data().houseId !== houseId) {
+    throw new Error('Item não pertence a esta casa');
+  }
+
   await updateDoc(itemRef, { 
     expenseId,
     completed: true,
-    completedBy: auth.currentUser?.uid,
+    completedBy: user.uid,
     completedAt: new Date()
   });
 };
@@ -84,8 +119,11 @@ export const getCompletedItems = async (days: number = 7) => {
   const dateLimit = new Date();
   dateLimit.setDate(dateLimit.getDate() - days);
 
+  const houseId = await getCurrentHouseId();
+
   const q = query(
     shoppingCollection,
+    where('houseId', '==', houseId),
     where('completed', '==', true),
     where('completedAt', '>=', dateLimit),
     orderBy('completedAt', 'desc')

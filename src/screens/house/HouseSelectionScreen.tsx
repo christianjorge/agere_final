@@ -5,8 +5,11 @@ import { Camera } from 'expo-camera';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
-import { getUserHouses, createHouse, joinHouseWithInvite, joinHouseWithInviteCode } from '../../services/house';
+import { getUserHouses, createHouse, joinHouseWithInvite, joinHouseWithInviteCode, getHouseDetails } from '../../services/house';
 import { House } from '../../types/house';
+import { useHouse } from '../../contexts/HouseContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { updateCurrentHouse } from '../../services/profile';
 
 export default function HouseSelectionScreen() {
   const [houses, setHouses] = useState<House[]>([]);
@@ -22,6 +25,8 @@ export default function HouseSelectionScreen() {
     address: '',
   });
   const navigation = useNavigation();
+  const { setCurrentHouse } = useHouse();
+  const { user } = useAuth();
 
   useEffect(() => {
     loadHouses();
@@ -34,6 +39,8 @@ export default function HouseSelectionScreen() {
     } catch (error) {
       console.error('Erro ao carregar casas:', error);
       Alert.alert('Erro', 'Não foi possível carregar suas casas');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,11 +103,30 @@ export default function HouseSelectionScreen() {
     }
   };
 
-  const selectHouse = (house: House) => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Main' }],
-    });
+  const selectHouse = async (house: House) => {
+    if (!house.id) {
+      Alert.alert('Erro', 'ID da casa inválido');
+      return;
+    }
+
+    try {
+      // Carregar detalhes completos da casa
+      const houseDetails = await getHouseDetails(house.id);
+      
+      // Atualizar o perfil do usuário com a casa selecionada
+      await updateCurrentHouse(house.id);
+      
+      // Atualizar o contexto
+      setCurrentHouse(houseDetails);
+      
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+    } catch (error) {
+      console.error('Erro ao selecionar casa:', error);
+      Alert.alert('Erro', 'Não foi possível selecionar a casa');
+    }
   };
 
   const handleJoinWithCode = async () => {

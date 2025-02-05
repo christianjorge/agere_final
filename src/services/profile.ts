@@ -2,15 +2,7 @@ import { doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
 import { db, auth, storage } from '../config/firebase';
-
-export interface UserProfile {
-  userId: string;
-  name: string;
-  phone?: string;
-  birthday?: Date;
-  pixKey?: string;
-  photo?: string;
-}
+import { UserProfile } from '../types/profile';
 
 export const updateProfile = async (profile: UserProfile) => {
   const user = auth.currentUser;
@@ -41,6 +33,7 @@ export const updateProfile = async (profile: UserProfile) => {
       birthday: profile.birthday ? new Date(profile.birthday) : null,
       pixKey: profile.pixKey || null,
       photoURL: photoURL || null,
+      houseId: profile.houseId || null,
       updatedAt: new Date(),
     }, { merge: true });
 
@@ -68,9 +61,21 @@ export const getProfile = async (userId: string): Promise<UserProfile | null> =>
       birthday: data.birthday?.toDate() || undefined,
       pixKey: data.pixKey || '',
       photo: data.photoURL || undefined,
+      houseId: data.houseId || undefined,
     };
   } catch (error) {
     console.error('Erro ao buscar perfil:', error);
     throw error;
   }
+};
+
+export const updateCurrentHouse = async (houseId: string) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const userRef = doc(db, 'users', user.uid);
+  await updateDoc(userRef, {
+    houseId,
+    updatedAt: new Date(),
+  });
 };

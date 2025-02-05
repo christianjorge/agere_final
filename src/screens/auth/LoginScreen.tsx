@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Text, Alert, Image } from 'react-native'; 
+import { auth } from '../../config/firebase';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { AuthInput } from '../../components/AuthInput';
 import { AuthButton } from '../../components/AuthButton';
 import { theme } from '../../styles/theme';
-import { getUserHouses } from '../../services/house';
+import { getProfile } from '../../services/profile';
 import logo from '../../../assets/logo2x.png';
 
 export default function LoginScreen() {
@@ -25,17 +26,17 @@ export default function LoginScreen() {
       setLoading(true);
       await signIn(email, password);
       
-      // Verificar se o usuário tem casas
-      const houses = await getUserHouses();
+      // Verificar se o usuário já tem perfil
+      const profile = await getProfile(auth.currentUser?.uid || '');
       
-      if (houses.length === 1) {
-        // Se tiver apenas uma casa, ir direto para o Main
+      if (!profile || !profile.name) {
+        // Se não tiver perfil, redirecionar para a tela de completar perfil
         navigation.reset({
           index: 0,
-          routes: [{ name: 'Main' }],
+          routes: [{ name: 'ProfileSetup' }],
         });
       } else {
-        // Se não tiver casa ou tiver mais de uma, ir para a seleção
+        // Se já tiver perfil, seguir o fluxo normal
         navigation.reset({
           index: 0,
           routes: [{ name: 'HouseSelection' }],

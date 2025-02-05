@@ -4,7 +4,8 @@ import { List, FAB, Portal, Dialog, IconButton, Checkbox, Button } from 'react-n
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { theme } from '../../styles/theme';
-import { ShoppingItem, addShoppingItem, updateShoppingItem, deleteShoppingItem, getShoppingList } from '../../services/shopping';
+import { ShoppingItem, ShoppingItemFormData } from '../../types/shopping';
+import { addShoppingItem, updateShoppingItem, deleteShoppingItem, getShoppingList } from '../../services/shopping';
 import ShoppingItemForm from '../../components/ShoppingItemForm';
 
 export default function ShoppingListScreen() {
@@ -37,7 +38,7 @@ export default function ShoppingListScreen() {
     }
   };
 
-  const handleAddItem = async (formData: any) => {
+  const handleAddItem = async (formData: ShoppingItemFormData) => {
     try {
       await addShoppingItem({
         name: formData.name,

@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { List, Button, Portal, Dialog, TextInput } from 'react-native-paper';
 import { theme } from '../../styles/theme';
-import { Settlement, getPendingSettlements, markSettlementAsPaid } from '../../services/expenses';
+import { Settlement } from '../../types/expenses';
+import { getPendingSettlements, markSettlementAsPaid } from '../../services/expenses';
+import { getProfile } from '../../services/profile';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function SettlementsScreen() {
@@ -10,6 +12,7 @@ export default function SettlementsScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedSettlement, setSelectedSettlement] = useState<Settlement | null>(null);
   const [visible, setVisible] = useState(false);
+  const [pixKey, setPixKey] = useState<string>('');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -36,17 +39,26 @@ export default function SettlementsScreen() {
     }
   };
 
+  const handleSettlementSelect = async (settlement: Settlement) => {
+    try {
+      // Buscar o perfil do usuário que vai receber o pagamento
+      const receiverProfile = await getProfile(settlement.toUser);
+      setPixKey(receiverProfile?.pixKey || '');
+      setSelectedSettlement(settlement);
+      setVisible(true);
+    } catch (error) {
+      console.error('Erro ao buscar dados do usuário:', error);
+    }
+  };
+
   const renderSettlement = ({ item }: { item: Settlement }) => (
     <List.Item
-      title={`Pagar para: ${item.toUser}`}
+      title={`Pagar para: ${item.toUserEmail}`}
       description={`Valor: R$ ${item.amount.toFixed(2)}`}
       right={props => (
         <Button
           mode="contained"
-          onPress={() => {
-            setSelectedSettlement(item);
-            setVisible(true);
-          }}
+          onPress={() => handleSettlementSelect(item)}
         >
           Pagar
         </Button>
@@ -69,10 +81,10 @@ export default function SettlementsScreen() {
         <Dialog visible={visible} onDismiss={() => setVisible(false)}>
           <Dialog.Title>Informações de Pagamento</Dialog.Title>
           <Dialog.Content>
-            {selectedSettlement?.pixKey ? (
+            {pixKey ? (
               <>
                 <Text style={styles.label}>Chave PIX:</Text>
-                <Text style={styles.pixKey}>{selectedSettlement.pixKey}</Text>
+                <Text style={styles.pixKey}>{pixKey}</Text>
               </>
             ) : (
               <Text>Usuário não cadastrou chave PIX</Text>

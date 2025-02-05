@@ -4,6 +4,7 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import HouseSelectionScreen from '../screens/house/HouseSelectionScreen';
+import ProfileSetupScreen from '../screens/auth/ProfileSetupScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -13,6 +14,7 @@ export default function AuthNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Cadastrar" component={RegisterScreen} />
       <Stack.Screen name="Recuperar Senha" component={ForgotPasswordScreen} />
+      <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ headerTitle: 'Completar Perfil' }} />
       <Stack.Screen 
         name="HouseSelection" 
         component={HouseSelectionScreen}

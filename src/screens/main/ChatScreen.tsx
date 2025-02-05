@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-import { List, Avatar, Searchbar, Badge, Divider } from 'react-native-paper';
+import { List, Avatar, Searchbar, Badge, Divider, Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../../styles/theme';
 import { ChatUser, getUsers, getUnreadCount } from '../../services/chat';
 import { useAuth } from '../../contexts/AuthContext';
 import { getProfile } from '../../services/profile';
+import { getHouseMembers } from '../../services/house';
 
 export default function ChatScreen() {
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -18,16 +19,23 @@ export default function ChatScreen() {
 
   useEffect(() => {
     loadUsers();
-    const interval = setInterval(loadUnreadCounts, 30000); // Atualiza a cada 30 segundos
+    const interval = setInterval(loadUnreadCounts, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const loadUsers = async () => {
     try {
+      // Primeiro, obter apenas os membros da casa atual
+      const houseMembers = await getHouseMembers();
+      const memberIds = houseMembers.map(member => member.userId);
+      
+      // Depois, carregar os usuários que são membros da casa
       const fetchedUsers = await getUsers();
-      setUsers(fetchedUsers);
+      const filteredUsers = fetchedUsers.filter(user => memberIds.includes(user.id));
+      
+      setUsers(filteredUsers);
       await loadUnreadCounts();
-      await loadUserProfiles(fetchedUsers);
+      await loadUserProfiles(filteredUsers);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
     } finally {
@@ -87,6 +95,17 @@ export default function ChatScreen() {
     return colors[index % colors.length];
   };
 
+  const renderEmptyList = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyText}>
+        Não há outros membros na casa para conversar.
+      </Text>
+      <Text style={styles.emptySubtext}>
+        Convide mais pessoas para a casa para começar a conversar!
+      </Text>
+    </View>
+  );
+
   const renderUser = ({ item }: { item: ChatUser }) => (
     <TouchableOpacity 
       onPress={() => navigation.navigate('ChatConversation', { user: item })}
@@ -139,7 +158,11 @@ export default function ChatScreen() {
         data={users}
         renderItem={renderUser}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[
+          styles.listContainer,
+          users.length === 0 && styles.emptyListContainer
+        ]}
+        ListEmptyComponent={!loading && renderEmptyList()}
         onRefresh={loadUsers}
         refreshing={loading}
       />
@@ -158,6 +181,10 @@ const styles = StyleSheet.create({
   listContainer: {
     flexGrow: 1,
   },
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
   avatar: {
     marginRight: theme.spacing.s,
   },
@@ -171,5 +198,23 @@ const styles = StyleSheet.create({
   unreadBadge: {
     backgroundColor: theme.colors.primary,
     alignSelf: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.l,
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: theme.spacing.m,
+    color: theme.colors.placeholder,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    color: theme.colors.placeholder,
+    opacity: 0.8,
   },
 });

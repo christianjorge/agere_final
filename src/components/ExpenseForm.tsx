@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import React, { useState, useEffect, } from 'react';
+import { View, StyleSheet, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { TextInput, Button, List, IconButton, Chip, Text } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../styles/theme';
 import { HouseMember } from '../types/house';
+import { getHouseMembers } from '../services/house';
 
 const CATEGORIES = [
   { label: 'Mercado', value: 'Mercado', icon: 'cart' },
@@ -29,15 +30,13 @@ interface ExpenseFormProps {
   onSubmit: (data: ExpenseFormData, receiptImage: string | null) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
-  members: HouseMember[];
 }
 
 export default function ExpenseForm({ 
   initialData, 
   onSubmit, 
   onCancel, 
-  loading = false,
-  members 
+  loading = false
 }: ExpenseFormProps) {
   const [formData, setFormData] = useState<ExpenseFormData>(initialData || {
     title: '',
@@ -50,6 +49,23 @@ export default function ExpenseForm({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [showCategories, setShowCategories] = useState(false);
+  const [members, setMembers] = useState<HouseMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+
+  useEffect(() => {
+    loadMembers();
+  }, []);
+
+  const loadMembers = async () => {
+    try {
+      const houseMembers = await getHouseMembers();
+      setMembers(houseMembers);
+    } catch (error) {
+      console.error('Erro ao carregar membros:', error);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -87,6 +103,14 @@ export default function ExpenseForm({
     }
     onSubmit(formData, receiptImage);
   };
+
+  if (loadingMembers) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -235,6 +259,10 @@ export default function ExpenseForm({
 const styles = StyleSheet.create({
   container: {
     padding: theme.spacing.m,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     marginBottom: theme.spacing.m,

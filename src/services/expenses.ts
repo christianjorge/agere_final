@@ -2,31 +2,8 @@ import { collection, addDoc, getDocs, query, where, orderBy, doc, updateDoc, del
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, auth, storage } from '../config/firebase';
 import { HouseMember } from '../types/house';
-
-export interface Expense {
-  id?: string;
-  title: string;
-  amount: number;
-  paidBy: string;
-  paidByEmail: string;
-  splitBetween: string[];
-  category: string;
-  date: Date;
-  description: string;
-  receiptUrl: string | null;
-  settled: boolean;
-  payments: Payment[];
-  createdAt: Date;
-}
-
-export interface Payment {
-  userId: string;
-  userEmail: string;
-  amount: number;
-  paid: boolean;
-  receiptUrl?: string | null;
-  paidAt?: Date | null;
-}
+import { Expense, Payment, Settlement } from '../types/expenses';
+import { getCurrentHouseId } from '../utils/houseUtils';
 
 const expensesCollection = collection(db, 'expenses');
 
@@ -45,17 +22,18 @@ export const createExpense = async (
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   let receiptUrl: string | null = null;
   if (receiptFile) {
     try {
       const response = await fetch(receiptFile);
       const blob = await response.blob();
-      const receiptRef = ref(storage, `receipts/${Date.now()}_${user.uid}`);
+      const receiptRef = ref(storage, `receipts/${houseId}/${Date.now()}_${user.uid}`);
       await uploadBytes(receiptRef, blob);
       receiptUrl = await getDownloadURL(receiptRef);
     } catch (error) {
       console.error('Erro ao fazer upload do comprovante:', error);
-      // Continua com receiptUrl como null
     }
   }
 
@@ -80,21 +58,18 @@ export const createExpense = async (
     splitBetween: expense.splitBetween,
     paidBy: user.uid,
     paidByEmail: user.email || '',
-    receiptUrl: receiptUrl,
+    receiptUrl,
     settled: false,
-    payments: payments,
-    createdAt: new Date()
+    payments,
+    createdAt: new Date(),
+    houseId
   };
-
-  // Debug: Verificar os dados antes de enviar
-  console.log('Dados da despesa a serem enviados:', JSON.stringify(expenseData, null, 2));
 
   try {
     const docRef = await addDoc(expensesCollection, expenseData);
-    console.log('Despesa criada com sucesso, ID:', docRef.id);
     return docRef.id;
   } catch (error) {
-    console.error('Erro detalhado ao criar despesa:', error);
+    console.error('Erro ao criar despesa:', error);
     throw error;
   }
 };
@@ -103,8 +78,11 @@ export const getExpenses = async () => {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   const q = query(
     expensesCollection,
+    where('houseId', '==', houseId),
     orderBy('createdAt', 'desc')
   );
 
@@ -121,12 +99,14 @@ export const registerPayment = async (expenseId: string, receiptFile: string | n
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   let receiptUrl: string | null = null;
   if (receiptFile) {
     try {
       const response = await fetch(receiptFile);
       const blob = await response.blob();
-      const receiptRef = ref(storage, `payments/${Date.now()}_${user.uid}`);
+      const receiptRef = ref(storage, `payments/${houseId}/${Date.now()}_${user.uid}`);
       await uploadBytes(receiptRef, blob);
       receiptUrl = await getDownloadURL(receiptRef);
     } catch (error) {
@@ -140,6 +120,12 @@ export const registerPayment = async (expenseId: string, receiptFile: string | n
   if (!expenseDoc.exists()) throw new Error('Despesa não encontrada');
 
   const expense = expenseDoc.data() as Expense;
+  
+  // Verificar se a despesa pertence à casa atual
+  if (expense.houseId !== houseId) {
+    throw new Error('Despesa não pertence a esta casa');
+  }
+
   const updatedPayments = expense.payments.map(payment => {
     if (payment.userId === user.uid) {
       return {
@@ -165,11 +151,18 @@ export const deleteExpense = async (expenseId: string) => {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   const expenseRef = doc(db, 'expenses', expenseId);
   const expenseDoc = await getDoc(expenseRef);
   if (!expenseDoc.exists()) throw new Error('Despesa não encontrada');
 
   const expense = expenseDoc.data() as Expense;
+
+  // Verificar se a despesa pertence à casa atual
+  if (expense.houseId !== houseId) {
+    throw new Error('Despesa não pertence a esta casa');
+  }
 
   // Verificar se é o criador da despesa
   if (expense.paidBy !== user.uid) {
@@ -205,4 +198,56 @@ export const deleteExpense = async (expenseId: string) => {
   }
 
   await deleteDoc(expenseRef);
+};
+
+export const getPendingSettlements = async (): Promise<Settlement[]> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const houseId = await getCurrentHouseId();
+
+  // Buscar liquidações pendentes onde o usuário é o pagador
+  const settlementsQuery = query(
+    collection(db, 'settlements'),
+    where('houseId', '==', houseId),
+    where('fromUser', '==', user.uid),
+    where('settled', '==', false)
+  );
+
+  const snapshot = await getDocs(settlementsQuery);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  } as Settlement));
+};
+
+export const markSettlementAsPaid = async (settlementId: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const houseId = await getCurrentHouseId();
+
+  const settlementRef = doc(db, 'settlements', settlementId);
+  const settlementDoc = await getDoc(settlementRef);
+
+  if (!settlementDoc.exists()) {
+    throw new Error('Liquidação não encontrada');
+  }
+
+  const settlement = settlementDoc.data() as Settlement;
+
+  // Verificar se a liquidação pertence à casa atual
+  if (settlement.houseId !== houseId) {
+    throw new Error('Liquidação não pertence a esta casa');
+  }
+
+  // Verificar se o usuário é o pagador
+  if (settlement.fromUser !== user.uid) {
+    throw new Error('Apenas o pagador pode marcar como pago');
+  }
+
+  await updateDoc(settlementRef, {
+    settled: true,
+    settledAt: new Date()
+  });
 };

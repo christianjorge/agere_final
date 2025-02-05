@@ -179,7 +179,7 @@ export default function TasksScreen() {
 
           {task.completed && task.completedAt && (
             <View style={styles.completedInfo}>
-              <Text>Concluída em: {task.completedAt.toDate().toLocaleDateString()}</Text>
+              <Text>Concluída em: {new Date(task.completedAt).toLocaleDateString()}</Text>
               {task.rating && (
                 <View style={styles.rating}>
                   <Text>Avaliação: {task.rating}/5</Text>

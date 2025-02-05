@@ -28,11 +28,15 @@ export default function RegisterScreen() {
     try {
       setLoading(true);
       await signUp(email, password);
-      Alert.alert('Sucesso', 'Conta criada com sucesso!');
-      navigation.goBack();
+      
+      // Após o registro, redirecionar para completar o perfil
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'ProfileSetup' }],
+      });
     } catch (error) {
-      console.error('Erro ao criar conta:', error); // Adicione este log
-      Alert.alert('Erro', `Não foi possível criar a conta: ${error.message}`); // Modifique para mostrar a mensagem de erro
+      console.error('Erro ao criar conta:', error);
+      Alert.alert('Erro', `Não foi possível criar a conta: ${error.message}`);
     } finally {
       setLoading(false);
     }

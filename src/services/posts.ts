@@ -1,48 +1,25 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, serverTimestamp, where, limit } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, orderBy, serverTimestamp, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, auth, storage } from '../config/firebase';
+import { Post, Comment } from '../types/posts';
+import { getCurrentHouseId } from '../utils/houseUtils';
 
-export interface Comment {
-  id?: string;
-  postId: string;
-  authorId: string;
-  authorEmail: string;
-  content: string;
-  createdAt: any;
-}
-
-export interface Post {
-  id?: string;
-  title: string;
-  content: string;
-  authorId: string;
-  authorEmail: string;
-  likes: string[];
-  imageUrl?: string;
-  createdAt: any;
-}
-
-export const postsCollection = collection(db, 'posts');
-export const commentsCollection = collection(db, 'comments');
+const postsCollection = collection(db, 'posts');
+const commentsCollection = collection(db, 'comments');
 
 export const createPost = async (title: string, content: string, image?: string): Promise<void> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   let imageUrl;
   if (image) {
     try {
-      // Converter URI da imagem para blob
       const response = await fetch(image);
       const blob = await response.blob();
-      
-      // Criar referência única para a imagem
-      const imageRef = ref(storage, `posts/${Date.now()}_${user.uid}`);
-      
-      // Upload do blob
+      const imageRef = ref(storage, `posts/${houseId}/${Date.now()}_${user.uid}`);
       await uploadBytes(imageRef, blob);
-      
-      // Obter URL da imagem
       imageUrl = await getDownloadURL(imageRef);
     } catch (error) {
       console.error('Erro ao fazer upload da imagem:', error);
@@ -51,6 +28,7 @@ export const createPost = async (title: string, content: string, image?: string)
   }
 
   await addDoc(postsCollection, {
+    houseId,
     title,
     content,
     authorId: user.uid,
@@ -65,21 +43,28 @@ export const updatePost = async (postId: string, title: string, content: string,
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+  
+  // Verificar se o post existe e pertence à casa atual
+  const postRef = doc(db, 'posts', postId);
+  const postDoc = await getDoc(postRef);
+  
+  if (!postDoc.exists()) {
+    throw new Error('Post não encontrado');
+  }
+
+  if (postDoc.data().houseId !== houseId) {
+    throw new Error('Post não pertence a esta casa');
+  }
+
   const updateData: any = { title, content };
 
   if (image) {
     try {
-      // Converter URI da imagem para blob
       const response = await fetch(image);
       const blob = await response.blob();
-      
-      // Criar referência única para a imagem
-      const imageRef = ref(storage, `posts/${Date.now()}_${user.uid}`);
-      
-      // Upload do blob
+      const imageRef = ref(storage, `posts/${houseId}/${Date.now()}_${user.uid}`);
       await uploadBytes(imageRef, blob);
-      
-      // Obter URL da imagem
       updateData.imageUrl = await getDownloadURL(imageRef);
     } catch (error) {
       console.error('Erro ao fazer upload da imagem:', error);
@@ -87,16 +72,50 @@ export const updatePost = async (postId: string, title: string, content: string,
     }
   }
 
-  const postRef = doc(db, 'posts', postId);
   await updateDoc(postRef, updateData);
 };
 
 export const deletePost = async (postId: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const houseId = await getCurrentHouseId();
+  
   const postRef = doc(db, 'posts', postId);
+  const postDoc = await getDoc(postRef);
+  
+  if (!postDoc.exists()) {
+    throw new Error('Post não encontrado');
+  }
+
+  const post = postDoc.data();
+  
+  if (post.houseId !== houseId) {
+    throw new Error('Post não pertence a esta casa');
+  }
+
+  if (post.authorId !== user.uid) {
+    throw new Error('Apenas o autor pode excluir o post');
+  }
+
+  // Deletar a imagem do storage se existir
+  if (post.imageUrl) {
+    try {
+      const imageRef = ref(storage, post.imageUrl);
+      await deleteObject(imageRef);
+    } catch (error) {
+      console.error('Erro ao deletar imagem:', error);
+    }
+  }
+
   await deleteDoc(postRef);
   
   // Deletar comentários do post
-  const commentsQuery = query(commentsCollection, where('postId', '==', postId));
+  const commentsQuery = query(
+    commentsCollection, 
+    where('postId', '==', postId),
+    where('houseId', '==', houseId)
+  );
   const commentsSnapshot = await getDocs(commentsQuery);
   commentsSnapshot.forEach(async (doc) => {
     await deleteDoc(doc.ref);
@@ -107,27 +126,38 @@ export const toggleLike = async (postId: string): Promise<void> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
   const postRef = doc(db, 'posts', postId);
-  const postDoc = await getDocs(query(collection(db, 'posts')));
-  const post = postDoc.docs.find(doc => doc.id === postId);
+  const postDoc = await getDoc(postRef);
 
-  if (post) {
-    const likes = post.data().likes || [];
-    const newLikes = likes.includes(user.uid)
-      ? likes.filter((id: string) => id !== user.uid)
-      : [...likes, user.uid];
-
-    await updateDoc(postRef, { likes: newLikes });
+  if (!postDoc.exists()) {
+    throw new Error('Post não encontrado');
   }
+
+  const post = postDoc.data();
+  
+  if (post.houseId !== houseId) {
+    throw new Error('Post não pertence a esta casa');
+  }
+
+  const likes = post.likes || [];
+  const newLikes = likes.includes(user.uid)
+    ? likes.filter((id: string) => id !== user.uid)
+    : [...likes, user.uid];
+
+  await updateDoc(postRef, { likes: newLikes });
 };
 
 export const getPosts = async (searchTerm?: string, maxPosts?: number): Promise<Post[]> => {
-  let q = query(postsCollection, orderBy('createdAt', 'desc'));
+  const houseId = await getCurrentHouseId();
   
-  if (maxPosts) {
-    q = query(q, limit(maxPosts));
-  }
-  
+  let q = query(
+    postsCollection,
+    where('houseId', '==', houseId),
+    orderBy('createdAt', 'desc')
+  );
+
   const querySnapshot = await getDocs(q);
   const posts = querySnapshot.docs.map(doc => ({
     id: doc.id,
@@ -148,7 +178,22 @@ export const addComment = async (postId: string, content: string): Promise<void>
   const user = auth.currentUser;
   if (!user) throw new Error('Usuário não autenticado');
 
+  const houseId = await getCurrentHouseId();
+
+  // Verificar se o post existe e pertence à casa atual
+  const postRef = doc(db, 'posts', postId);
+  const postDoc = await getDoc(postRef);
+  
+  if (!postDoc.exists()) {
+    throw new Error('Post não encontrado');
+  }
+
+  if (postDoc.data().houseId !== houseId) {
+    throw new Error('Post não pertence a esta casa');
+  }
+
   await addDoc(commentsCollection, {
+    houseId,
     postId,
     content,
     authorId: user.uid,
@@ -158,8 +203,11 @@ export const addComment = async (postId: string, content: string): Promise<void>
 };
 
 export const getComments = async (postId: string): Promise<Comment[]> => {
+  const houseId = await getCurrentHouseId();
+
   const q = query(
     commentsCollection,
+    where('houseId', '==', houseId),
     where('postId', '==', postId),
     orderBy('createdAt', 'desc')
   );
